@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@0.21.0";
+import { Chess } from "npm:chess.js@1.0.0";
 
 const apiKey = Deno.env.get("GEMINI_API_KEY");
 if (!apiKey) {
@@ -9,7 +10,7 @@ if (!apiKey) {
 const genAI = new GoogleGenerativeAI(apiKey);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" }); 
 
-console.log("🚀 Server Chess AI (Gemini) berjalan di http://localhost:8000");
+console.log("🚀 Server Chess AI (Gemini + chess.js) berjalan di http://localhost:8000");
 
 async function handleRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
@@ -28,7 +29,7 @@ async function handleRequest(request: Request): Promise<Response> {
 
   // GET / -> Health Check
   if (url.pathname === "/") {
-    return new Response("Server Aktif 🚀", { 
+    return new Response("Server Aktif 🚀 (with chess.js validation)", { 
         status: 200, 
         headers: { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" } 
     });
@@ -45,14 +46,29 @@ async function handleRequest(request: Request): Promise<Response> {
 
         console.log(`Received FEN: ${fen}`);
 
-        // Prompt Engineering for Chess
+        // Initialize chess.js with FEN
+        const chess = new Chess(fen);
+        const legalMoves = chess.moves({ verbose: true });
+        const legalMovesUCI = legalMoves.map((m: { from: string; to: string; promotion?: string }) => 
+            m.from + m.to + (m.promotion || '')
+        );
+        
+        console.log(`Legal moves: ${legalMovesUCI.join(', ')}`);
+        
+        if (legalMovesUCI.length === 0) {
+            return new Response(JSON.stringify({ error: "No legal moves (game over?)", move: "" }), { headers });
+        }
+
+        // Prompt with legal moves hint
         const prompt = `
         You are a Grandmaster Chess Engine.
         Current Board (FEN): ${fen}
         
-        Task: Analyze the position and provide the absolute best move.
-        Output Format: Just the move in UCI format (e.g., e2e4, g1f3) or standard notation if UCI is ambiguous, inside a JSON block.
-        Do not explain.
+        IMPORTANT: You MUST choose from these legal moves ONLY:
+        ${legalMovesUCI.join(', ')}
+        
+        Task: Pick the absolute best move from the list above.
+        Output Format: Just the move in UCI format (e.g., e2e4) inside a JSON block.
         
         JSON:
         {"move": "..."}
@@ -62,17 +78,21 @@ async function handleRequest(request: Request): Promise<Response> {
         const responseText = result.response.text();
         console.log("Gemini Raw:", responseText);
 
-        // Extract JSON
+        // Extract move from JSON
         const jsonMatch = responseText.match(/\{.*"move".*\}/s);
         let move = "";
         if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0]);
-            move = parsed.move;
-        } else {
-            // Fallback simplistic parsing
-             move = responseText.trim();
+            move = parsed.move?.toLowerCase().replace(/[^a-h1-8qrbn]/g, '') || "";
         }
 
+        // Validate move
+        if (!legalMovesUCI.includes(move)) {
+            console.log(`⚠️ Gemini gave illegal move: ${move}, picking random legal move`);
+            move = legalMovesUCI[Math.floor(Math.random() * legalMovesUCI.length)];
+        }
+
+        console.log(`✅ Final move: ${move}`);
         return new Response(JSON.stringify({ move: move, fen: fen }), { headers });
 
     } catch (err) {
