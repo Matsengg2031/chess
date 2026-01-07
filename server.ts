@@ -7,7 +7,7 @@ if (!apiKey) {
 }
 
 const genAI = new GoogleGenerativeAI(apiKey);
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" }); 
+const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" }); 
 
 console.log("🚀 Server Chess AI (Gemini) berjalan di http://localhost:8000");
 
