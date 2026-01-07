@@ -26,6 +26,14 @@ async function handleRequest(request: Request): Promise<Response> {
     return new Response(null, { headers });
   }
 
+  // GET / -> Health Check
+  if (url.pathname === "/") {
+    return new Response("Server Aktif 🚀", { 
+        status: 200, 
+        headers: { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" } 
+    });
+  }
+
   if (url.pathname === "/analyze" && request.method === "POST") {
     try {
         const body = await request.json();
